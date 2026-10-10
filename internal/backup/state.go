@@ -14,21 +14,21 @@ type FileState struct {
 	MTime int64 `json:"mtime"` // UnixNano
 }
 
-// JobState 是单个任务的状态。
-type JobState struct {
+// SourceState 是单个源目录的状态。
+type SourceState struct {
 	Files        map[string]FileState `json:"files"` // rel 路径 -> 指纹
 	LastRun      time.Time            `json:"last_run"`
 	DoneDateDirs []string             `json:"done_date_dirs,omitempty"` // 已完成、可跳过遍历的日期目录
 }
 
-// State 是整个状态账本，按 job 名隔离。
+// State 是整个状态账本，按“源路径对应的桶内路径段”隔离（见 SourcePrefix）。
 type State struct {
-	Jobs map[string]*JobState `json:"jobs"`
+	Sources map[string]*SourceState `json:"sources"`
 }
 
 // LoadState 读取状态文件；文件不存在视为空状态（首次运行）。
 func LoadState(path string) (*State, error) {
-	st := &State{Jobs: map[string]*JobState{}}
+	st := &State{Sources: map[string]*SourceState{}}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return st, nil
@@ -39,23 +39,23 @@ func LoadState(path string) (*State, error) {
 	if err := json.Unmarshal(data, st); err != nil {
 		return nil, err
 	}
-	if st.Jobs == nil {
-		st.Jobs = map[string]*JobState{}
+	if st.Sources == nil {
+		st.Sources = map[string]*SourceState{}
 	}
 	return st, nil
 }
 
-// Job 取得（必要时创建）某个任务的子状态。
-func (st *State) Job(name string) *JobState {
-	j, ok := st.Jobs[name]
+// Source 取得（必要时创建）某个源的状态。
+func (st *State) Source(key string) *SourceState {
+	s, ok := st.Sources[key]
 	if !ok {
-		j = &JobState{Files: map[string]FileState{}}
-		st.Jobs[name] = j
+		s = &SourceState{Files: map[string]FileState{}}
+		st.Sources[key] = s
 	}
-	if j.Files == nil {
-		j.Files = map[string]FileState{}
+	if s.Files == nil {
+		s.Files = map[string]FileState{}
 	}
-	return j
+	return s
 }
 
 // Save 原子写回状态文件（先写临时文件再 rename）。

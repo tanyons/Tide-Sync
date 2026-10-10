@@ -52,7 +52,7 @@ func capturePayload(t *testing.T, events []string, ev Event) map[string]any {
 func sampleEvent(status string) Event {
 	now := time.Now()
 	return Event{
-		Host: "web-01", Job: "appA", Status: status,
+		Host: "web-01", Source: "/opt/backup/appA", Status: status,
 		StartedAt: now.Add(-8 * time.Second), EndedAt: now,
 		Scanned: 120, Uploaded: 3, Bytes: 1048576,
 	}

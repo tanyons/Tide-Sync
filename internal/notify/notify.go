@@ -18,7 +18,7 @@ import (
 // Event 是一次任务执行的结果事件。
 type Event struct {
 	Host      string
-	Job       string
+	Source    string
 	Status    string // success | failure
 	StartedAt time.Time
 	EndedAt   time.Time
@@ -139,7 +139,7 @@ func feishuCard(ev Event) map[string]any {
 			"tag": "div",
 			"fields": []any{
 				cardField("主机", ev.Host),
-				cardField("任务", ev.Job),
+				cardField("目录", ev.Source),
 				cardField("耗时", humanDuration(ev.EndedAt.Sub(ev.StartedAt))),
 				cardField("上传", fmt.Sprintf("%d 个 · %s", ev.Uploaded, humanBytes(ev.Bytes))),
 				cardField("扫描", fmt.Sprintf("%d", ev.Scanned)),
@@ -244,7 +244,7 @@ func plainText(ev Event) string {
 		status = "失败"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "【Tide-Sync %s】主机=%s 任务=%s\n", status, ev.Host, ev.Job)
+	fmt.Fprintf(&b, "【Tide-Sync %s】主机=%s 源=%s\n", status, ev.Host, ev.Source)
 	fmt.Fprintf(&b, "扫描=%d 上传=%d 失败=%d 字节=%d 耗时=%s",
 		ev.Scanned, ev.Uploaded, ev.Failures, ev.Bytes, humanDuration(ev.EndedAt.Sub(ev.StartedAt)))
 	if ev.Err != "" {

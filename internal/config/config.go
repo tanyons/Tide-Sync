@@ -40,7 +40,7 @@ type Config struct {
 	Notify    Notify    `koanf:"notify"`
 	Lifecycle Lifecycle `koanf:"lifecycle"`
 	Defaults  Defaults  `koanf:"defaults"`
-	Jobs      []Job     `koanf:"jobs"`
+	Sources   []Source  `koanf:"sources"`
 }
 
 type Storage struct {
@@ -101,9 +101,9 @@ type Defaults struct {
 	DateDirRegex          string   `koanf:"date_dir_regex"`
 }
 
-type Job struct {
-	Name    string   `koanf:"name"`
-	Source  string   `koanf:"source"`
+// Source 是一个同步源根目录；路径本身即身份（桶内层级按其绝对路径保留）。
+type Source struct {
+	Path    string   `koanf:"path"`
 	Exclude []string `koanf:"exclude"` // 追加，叠加 Defaults.Exclude
 }
 
@@ -213,6 +213,32 @@ func (c *Config) applyDefaults() {
 	}
 }
 
+// resolvePaths 把配置里的相对路径解析到“配置文件所在目录”，使工具可在任意目录运行。
+func (c *Config) resolvePaths(configPath string) {
+	base, err := filepath.Abs(filepath.Dir(configPath))
+	if err != nil {
+		base = filepath.Dir(configPath)
+	}
+	if c.Defaults.StateFile == "" {
+		c.Defaults.StateFile = filepath.Join(base, DefaultStateFileName)
+	} else {
+		c.Defaults.StateFile = absFrom(base, c.Defaults.StateFile)
+	}
+	if c.Logging.File != "" {
+		c.Logging.File = absFrom(base, c.Logging.File)
+	}
+	if c.Storage.LocalDir != "" {
+		c.Storage.LocalDir = absFrom(base, c.Storage.LocalDir)
+	}
+}
+
+func absFrom(base, p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(base, p)
+}
+
 // Validate 做完整性校验，任何问题都明确指出。
 func (c *Config) Validate() error {
 	switch c.Storage.Type {
@@ -239,23 +265,47 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("defaults.date_dir_regex 非法: %w", err)
 	}
 
-	if len(c.Jobs) == 0 {
-		return fmt.Errorf("至少需要一个 [[jobs]]")
+	if len(c.Sources) == 0 {
+		return fmt.Errorf("至少需要一个 [[sources]]")
 	}
-	seen := map[string]bool{}
-	for i, j := range c.Jobs {
-		if j.Name == "" {
-			return fmt.Errorf("jobs[%d] 缺少 name", i)
+	for i, s := range c.Sources {
+		if s.Path == "" {
+			return fmt.Errorf("sources[%d] 缺少 path", i)
 		}
-		if j.Source == "" {
-			return fmt.Errorf("jobs[%d] (%s) 缺少 source", i, j.Name)
+		if !isRooted(s.Path) {
+			return fmt.Errorf("sources[%d] 的 path 必须是绝对路径: %q", i, s.Path)
 		}
-		if seen[j.Name] {
-			return fmt.Errorf("jobs 中 name 重复: %q", j.Name)
+	}
+
+	// 源目录不允许重叠/嵌套：否则同一批文件会被上传两份。
+	for i := 0; i < len(c.Sources); i++ {
+		for j := i + 1; j < len(c.Sources); j++ {
+			a := filepath.Clean(c.Sources[i].Path)
+			b := filepath.Clean(c.Sources[j].Path)
+			if nestedIn(a, b) || nestedIn(b, a) {
+				return fmt.Errorf("源目录重叠，会重复上传: %q 与 %q", a, b)
+			}
 		}
-		seen[j.Name] = true
 	}
 	return nil
+}
+
+// isRooted 判断是否“根起”的路径。Windows 上 "/opt/x" 不算绝对路径，
+// 但生产目标是 Linux，这里同时接受它以方便跨平台编写/测试配置。
+func isRooted(p string) bool {
+	return filepath.IsAbs(p) || strings.HasPrefix(filepath.ToSlash(p), "/")
+}
+
+// nestedIn 判断 child 是否等于 parent 或在 parent 之下。
+func nestedIn(parent, child string) bool {
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Host 返回主机标识：优先用配置，否则用 os.Hostname()。
@@ -288,8 +338,8 @@ func (c *Config) Redacted() string {
 	fmt.Fprintf(&b, "defaults.exclude = %v\n", c.Defaults.Exclude)
 	fmt.Fprintf(&b, "notify.feishu    = %v\n", c.Notify.Feishu.Enabled)
 	fmt.Fprintf(&b, "notify.dingtalk  = %v\n", c.Notify.Dingtalk.Enabled)
-	for _, j := range c.Jobs {
-		fmt.Fprintf(&b, "job %-16s source=%s exclude=%v\n", j.Name, j.Source, j.Exclude)
+	for _, s := range c.Sources {
+		fmt.Fprintf(&b, "source %-24s exclude=%v\n", s.Path, s.Exclude)
 	}
 	return b.String()
 }
@@ -302,31 +352,4 @@ func redact(s string) string {
 		return "****"
 	}
 	return s[:2] + "****" + s[len(s)-2:]
-}
-
-// resolvePaths 把配置里的相对路径解析到“配置文件所在目录”。
-// 这样无论 clone/部署到哪个目录，state/log/local 目录都跟着配置文件走，而不是写死 /opt。
-func (c *Config) resolvePaths(configPath string) {
-	base, err := filepath.Abs(filepath.Dir(configPath))
-	if err != nil {
-		base = filepath.Dir(configPath)
-	}
-	if c.Defaults.StateFile == "" {
-		c.Defaults.StateFile = filepath.Join(base, DefaultStateFileName)
-	} else {
-		c.Defaults.StateFile = absFrom(base, c.Defaults.StateFile)
-	}
-	if c.Logging.File != "" {
-		c.Logging.File = absFrom(base, c.Logging.File)
-	}
-	if c.Storage.LocalDir != "" {
-		c.Storage.LocalDir = absFrom(base, c.Storage.LocalDir)
-	}
-}
-
-func absFrom(base, p string) string {
-	if filepath.IsAbs(p) {
-		return p
-	}
-	return filepath.Join(base, p)
 }

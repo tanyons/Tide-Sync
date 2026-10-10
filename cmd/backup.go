@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -11,35 +12,36 @@ import (
 func newBackupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "backup",
-		Short: "强制执行指定任务（--job），缺省则全部",
+		Short: "强制同步指定源目录（--source），缺省则全部",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			app, err := setup(cmd)
 			if err != nil {
 				return err
 			}
-			jobName, _ := cmd.Flags().GetString("job")
+			srcPath, _ := cmd.Flags().GetString("source")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 
-			jobs, err := selectJobs(app.Cfg.Jobs, jobName)
+			sources, err := selectSources(app.Cfg.Sources, srcPath)
 			if err != nil {
 				return err
 			}
-			return runWithLock(cmd, app, jobs, dryRun)
+			return runWithLock(cmd, app, sources, dryRun)
 		},
 	}
-	cmd.Flags().String("job", "", "只执行指定任务（默认全部）")
-	cmd.Flags().Bool("dry-run", false, "只列出将要执行的任务，不实际上传")
+	cmd.Flags().String("source", "", "只同步指定源目录（默认全部）")
+	cmd.Flags().Bool("dry-run", false, "只列出将要同步的源目录，不实际上传")
 	return cmd
 }
 
-func selectJobs(all []config.Job, name string) ([]config.Job, error) {
-	if name == "" {
+func selectSources(all []config.Source, path string) ([]config.Source, error) {
+	if path == "" {
 		return all, nil
 	}
-	for _, j := range all {
-		if j.Name == name {
-			return []config.Job{j}, nil
+	want := filepath.Clean(path)
+	for _, s := range all {
+		if filepath.Clean(s.Path) == want {
+			return []config.Source{s}, nil
 		}
 	}
-	return nil, fmt.Errorf("未找到任务: %q", name)
+	return nil, fmt.Errorf("未配置该源目录: %q", path)
 }

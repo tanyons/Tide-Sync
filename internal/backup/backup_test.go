@@ -7,12 +7,38 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	"Tide-Sync/internal/config"
 	"Tide-Sync/internal/store"
 )
+
+func TestSourcePrefix(t *testing.T) {
+	cases := map[string]string{
+		"/opt/backup":       "opt/backup",
+		"/opt/backup/":      "opt/backup",
+		"/opt/backup/appA/": "opt/backup/appA",
+	}
+	for in, want := range cases {
+		if got := SourcePrefix(in); got != filepath.ToSlash(want) {
+			t.Errorf("SourcePrefix(%q) = %q，期望 %q", in, got, want)
+		}
+	}
+	// Windows 盘符不应出现在桶内路径里
+	if got := SourcePrefix(filepath.Join(t.TempDir(), "x")); strings.Contains(got, ":") {
+		t.Errorf("SourcePrefix 不应含冒号: %q", got)
+	}
+}
+
+func TestObjectKey(t *testing.T) {
+	got := ObjectKey("tide-sync", "web-01", "/opt/backup", "appA/log-2024-06-11/a.log")
+	want := "tide-sync/web-01/opt/backup/appA/log-2024-06-11/a.log"
+	if got != want {
+		t.Fatalf("ObjectKey = %q，期望 %q", got, want)
+	}
+}
 
 func TestParseDateDir(t *testing.T) {
 	re := regexp.MustCompile(`^log-\d{4}-\d{2}-\d{2}$`)
@@ -25,14 +51,6 @@ func TestParseDateDir(t *testing.T) {
 	}
 	if _, ok := ParseDateDir("notadate", re); ok {
 		t.Fatal("非日期目录不应识别")
-	}
-}
-
-func TestObjectKey(t *testing.T) {
-	got := ObjectKey("tide-sync", "web-01", "appA", "log-2024-06-11/a.log")
-	want := "tide-sync/web-01/appA/log-2024-06-11/a.log"
-	if got != want {
-		t.Fatalf("ObjectKey = %q", got)
 	}
 }
 
@@ -60,20 +78,20 @@ func TestScanExclude(t *testing.T) {
 	}
 }
 
-func newTestConfig(t *testing.T, src, mirror string) *config.Config {
-	t.Helper()
+func newTestConfig(mirror string, sources ...config.Source) *config.Config {
 	return &config.Config{
 		Storage: config.Storage{Type: "local", LocalDir: mirror, Prefix: "tide-sync"},
 		Defaults: config.Defaults{
 			Host:                  "testhost",
-			StateFile:             filepath.Join(t.TempDir(), "state.json"),
+			StateFile:             filepath.Join(mirror, "state.json"),
 			Exclude:               []string{"**/*.tmp"},
 			Concurrency:           2,
 			Retry:                 1,
+			RetryBackoffSeconds:   1,
 			SkipCompletedDateDirs: true,
 			DateDirRegex:          `^log-\d{4}-\d{2}-\d{2}$`,
 		},
-		Jobs: []config.Job{{Name: "appA", Source: src}},
+		Sources: sources,
 	}
 }
 
@@ -96,43 +114,35 @@ func TestRunIncrementalMirror(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := newTestConfig(t, src, mirror)
+	cfg := newTestConfig(mirror, config.Source{Path: src})
 	b, err := store.New(cfg.Storage)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 	deps := Deps{Store: b, Logger: discardLogger()}
-	st := &State{Jobs: map[string]*JobState{}}
+	st := &State{Sources: map[string]*SourceState{}}
 
-	res := Run(ctx, cfg, cfg.Jobs[0], deps, st)
-	if res.Err != nil {
-		t.Fatalf("首次运行: %v", res.Err)
+	if res := Run(ctx, cfg, cfg.Sources[0], deps, st); res.Uploaded != 1 {
+		t.Fatalf("首次应上传 1，得到 %d（err=%v）", res.Uploaded, res.Err)
 	}
-	if res.Uploaded != 1 {
-		t.Fatalf("首次应上传 1，得到 %d", res.Uploaded)
-	}
-
-	// 再次运行：无变化 -> 不上传
-	res = Run(ctx, cfg, cfg.Jobs[0], deps, st)
-	if res.Uploaded != 0 {
+	if res := Run(ctx, cfg, cfg.Sources[0], deps, st); res.Uploaded != 0 {
 		t.Fatalf("无变化时应上传 0，得到 %d", res.Uploaded)
 	}
 
-	// 修改文件 -> 重新上传
 	if err := os.WriteFile(f, []byte("hello world"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res = Run(ctx, cfg, cfg.Jobs[0], deps, st)
-	if res.Uploaded != 1 {
+	if res := Run(ctx, cfg, cfg.Sources[0], deps, st); res.Uploaded != 1 {
 		t.Fatalf("修改后应上传 1，得到 %d", res.Uploaded)
 	}
 
-	// 桶内布局断言：<prefix>/<host>/<job>/<date>/a.log
-	wantKey := filepath.Join(mirror, "tide-sync", "testhost", "appA", dateDir, "a.log")
+	// 桶内布局：<prefix>/<host>/<源绝对路径>/<日期>/a.log
+	wantKey := filepath.Join(mirror, "tide-sync", "testhost",
+		filepath.FromSlash(SourcePrefix(src)), dateDir, "a.log")
 	data, err := os.ReadFile(wantKey)
 	if err != nil {
-		t.Fatalf("读取镜像文件: %v", err)
+		t.Fatalf("读取镜像文件 %s: %v", wantKey, err)
 	}
 	if string(data) != "hello world" {
 		t.Fatalf("镜像内容 = %q", data)
@@ -151,13 +161,13 @@ func TestSkipCompletedDateDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := newTestConfig(t, src, mirror)
+	cfg := newTestConfig(mirror, config.Source{Path: src})
 	b, _ := store.New(cfg.Storage)
 	ctx := context.Background()
 	deps := Deps{Store: b, Logger: discardLogger()}
-	st := &State{Jobs: map[string]*JobState{}}
+	st := &State{Sources: map[string]*SourceState{}}
 
-	if res := Run(ctx, cfg, cfg.Jobs[0], deps, st); res.Uploaded != 1 {
+	if res := Run(ctx, cfg, cfg.Sources[0], deps, st); res.Uploaded != 1 {
 		t.Fatalf("首次应上传 1，得到 %d", res.Uploaded)
 	}
 
@@ -165,15 +175,15 @@ func TestSkipCompletedDateDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(past, "b.log"), []byte("y"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if res := Run(ctx, cfg, cfg.Jobs[0], deps, st); res.Uploaded != 0 {
+	if res := Run(ctx, cfg, cfg.Sources[0], deps, st); res.Uploaded != 0 {
 		t.Fatalf("已完成目录应被跳过，上传 %d", res.Uploaded)
 	}
 }
 
 func TestStateRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "state.json")
-	st := &State{Jobs: map[string]*JobState{}}
-	st.Job("appA").Files["a.log"] = FileState{Size: 5, MTime: 123}
+	st := &State{Sources: map[string]*SourceState{}}
+	st.Source("opt/backup").Files["a.log"] = FileState{Size: 5, MTime: 123}
 	if err := st.Save(p); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +191,7 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fs := got.Job("appA").Files["a.log"]; fs.Size != 5 || fs.MTime != 123 {
+	if fs := got.Source("opt/backup").Files["a.log"]; fs.Size != 5 || fs.MTime != 123 {
 		t.Fatalf("往返结果 = %+v", fs)
 	}
 }

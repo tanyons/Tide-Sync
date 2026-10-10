@@ -23,7 +23,7 @@ max_age_days = 0                        # 0=不按天数清理
 compress = false                        # 是否压缩旧日志
 
 [notify]
-timeout_seconds = 10                    # 单次 webhook 请求超时
+timeout_seconds = 30                    # 单次 webhook 请求超时
 
 [notify.feishu]
 enabled = true
@@ -52,7 +52,11 @@ retry_backoff_seconds = 1               # 重试退避基数：第 i 次等待 i
 skip_completed_datedirs = true
 date_dir_regex = "^log-\\d{4}-\\d{2}-\\d{2}$"
 
-[[jobs]]
-name = "appA"                           # 桶内路径 <prefix>/<host>/appA/...
-source = "/opt/backup/appA"             # 本地备份根目录（内含 log-YYYY-MM-DD/）
+# 要同步的源目录：一台主机一份配置，把本机目录列出来即可。
+# 桶内层级 = <prefix>/<host>/<源绝对路径>，如 /opt/backup -> tide-sync/web-01/opt/backup/...
+[[sources]]
+path = "/opt/backup"
+
+# [[sources]]
+# path = "/srv/data"
 # exclude = ["**/*.log"]                # 追加排除，与 defaults.exclude 叠加

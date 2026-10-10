@@ -1,3 +1,4 @@
+// Package restore 把桶内某个子树恢复到本地目录（目录对目录）。
 package restore
 
 import (
@@ -17,31 +18,26 @@ import (
 type Options struct {
 	Prefix string // 桶内根前缀
 	Host   string
-	Job    string
-	Dir    string // 可选：仅恢复某个顶层目录，如 log-2024-06-11
+	Path   string // 桶内子树（相对 host），如 opt/backup/appA/log-2024-06-01；空=整个主机
 	Filter string // 可选：doublestar 过滤相对路径
-	To     string // 目标目录
+	To     string // 目标目录：子树内容写入此处
 }
 
-// Run 从桶内拉取指定 host/job 的对象到本地目录，返回恢复文件数。
+// Run 把 <prefix>/<host>/<path> 下对象的“内容”恢复到 opt.To，返回恢复文件数。
 func Run(ctx context.Context, b store.Backend, opt Options) (int, error) {
-	objPrefix := path.Join(opt.Prefix, opt.Host, opt.Job)
-	objects, err := b.List(ctx, objPrefix)
+	subtree := path.Join(opt.Prefix, opt.Host, filepath.ToSlash(opt.Path))
+	objects, err := b.List(ctx, subtree)
 	if err != nil {
 		return 0, err
 	}
 
-	prefixWithSlash := objPrefix + "/"
+	prefixWithSlash := subtree + "/"
 	count := 0
 	for _, o := range objects {
 		if !strings.HasPrefix(o.Key, prefixWithSlash) {
 			continue
 		}
 		rel := strings.TrimPrefix(o.Key, prefixWithSlash)
-
-		if opt.Dir != "" && !strings.HasPrefix(rel, opt.Dir+"/") {
-			continue
-		}
 		if opt.Filter != "" {
 			if ok, _ := doublestar.Match(opt.Filter, rel); !ok {
 				continue
@@ -58,4 +54,10 @@ func Run(ctx context.Context, b store.Backend, opt Options) (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+// IsRootPath 判断是否文件系统根目录（恢复默认不允许直接写根）。
+func IsRootPath(p string) bool {
+	c := filepath.Clean(p)
+	return filepath.Dir(c) == c
 }
