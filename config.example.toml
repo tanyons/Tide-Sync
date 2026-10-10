@@ -28,7 +28,7 @@ timeout_seconds = 10                    # 单次 webhook 请求超时
 [notify.feishu]
 enabled = true
 webhook = "${FEISHU_WEBHOOK}"
-events = ["failure"]                    # success|failure|always；缺省只发 failure
+events = ["always"]                     # success|failure|always；缺省=成功失败都发
 
 # [notify.dingtalk]                     # 预留，字段与飞书一致
 # enabled = false
