@@ -33,12 +33,12 @@ internal/
   lock/                   构件：flock 封装
 ```
 
-| 层 | 只做 | 绝不做 |
-|---|---|---|
-| `cmd` | 解析参数、调用下层、打日志、定退出码 | 业务逻辑、文件遍历、OSS 调用 |
-| `backup/restore/lifecycle` | 编排流程 | 读 flag、直接建 client |
-| `store/config/logx/notify/lock` | 单一职责 | 编排、跨层调用 |
-| `main` | 建对象、传参 | 业务逻辑 |
+| 层                              | 只做                                 | 绝不做                       |
+| ------------------------------- | ------------------------------------ | ---------------------------- |
+| `cmd`                           | 解析参数、调用下层、打日志、定退出码 | 业务逻辑、文件遍历、OSS 调用 |
+| `backup/restore/lifecycle`      | 编排流程                             | 读 flag、直接建 client       |
+| `store/config/logx/notify/lock` | 单一职责                             | 编排、跨层调用               |
+| `main`                          | 建对象、传参                         | 业务逻辑                     |
 
 ## 代码约定（**显式优先**）
 
@@ -46,22 +46,22 @@ internal/
    其余一律用具体类型 / 普通函数，**不预先抽象**。
 2. **固定问题锁定固定位置**（一处实现、一处修改）：
 
-   | 固定问题 | 锁定位置 |
-   |---|---|
-   | 源路径 → 桶内路径段 | `backup.SourcePrefix` |
-   | 对象 key 拼接 | `backup.ObjectKey` |
-   | 排除规则匹配 | `backup.shouldExclude` |
-   | 日期目录识别 | `backup.ParseDateDir` |
-   | 增量判断（size+mtime） | `backup.unchanged` |
-   | 状态读写 | `backup.LoadState` / `State.Save` |
-   | 生命周期 XML/下发 | `internal/lifecycle` |
-   | 内网 endpoint 转换 | `store.InternalEndpoint` |
-   | OSS client 创建 | `store.OSSClient` |
-   | `.env` 解析 | `config.LoadDotEnv` |
-   | `${ENV}` 展开 | `config.expandEnv` |
-   | 配置路径发现 | `cmd.resolveConfigPath` |
-   | 相对路径解析（相对配置目录） | `config.resolvePaths` |
-   | 源目录重叠校验 | `config.nestedIn` |
+    | 固定问题                     | 锁定位置                          |
+    | ---------------------------- | --------------------------------- |
+    | 源路径 → 桶内路径段          | `backup.SourcePrefix`             |
+    | 对象 key 拼接                | `backup.ObjectKey`                |
+    | 排除规则匹配                 | `backup.shouldExclude`            |
+    | 日期目录识别                 | `backup.ParseDateDir`             |
+    | 增量判断（size+mtime）       | `backup.unchanged`                |
+    | 状态读写                     | `backup.LoadState` / `State.Save` |
+    | 生命周期 XML/下发            | `internal/lifecycle`              |
+    | 内网 endpoint 转换           | `store.InternalEndpoint`          |
+    | OSS client 创建              | `store.OSSClient`                 |
+    | `.env` 解析                  | `config.LoadDotEnv`               |
+    | `${ENV}` 展开                | `config.expandEnv`                |
+    | 配置路径发现                 | `cmd.resolveConfigPath`           |
+    | 相对路径解析（相对配置目录） | `config.resolvePaths`             |
+    | 源目录重叠校验               | `config.nestedIn`                 |
 
 3. **显式装配**：`cmd.loadConfig()` 先 `.env` 再 `config.Load`；`cmd.setup()` 建 `logger/store/notifier`
    并传参给用例。**不用全局变量、不用 `init()`、不用反射、不用 DI 框架。**
@@ -125,7 +125,7 @@ go build ./... / go vet ./... / go test ./... / gofmt -l -w .
 - **`--days/--abort-days` 传 0 表示"用配置"**：`cmd/lifecycle.go` 里 `<=0` 时回落到 `cfg.Lifecycle.*`。
 - **路径归一化**：源扫描内部统一 `/` 分隔（`filepath.ToSlash`）；key 用 `path.Join`；
   本地路径用 `filepath`。开发在 Windows、生产在 Linux，注意别混用。
-- **`${ENV}` 展开只识别 `${NAME}`**（不处理裸 `$`）；变量缺失直接报错。
+- **`${ENV}` 展开只识别 `${NAME}`**（不处理裸 `$`）；变量缺失直接报错。展开前会先剥离 TOML 注释，注释里出现的 `${...}`（说明文字或注释掉的配置项）不会被当作缺失变量。
 - **目录一律自动创建**：`state.json`（`State.Save`）、local 镜像目录、日志目录、锁目录都会自动建。
 - **systemd 默认 `TimeoutStartSec=90s` 会杀掉长备份**：`Type=oneshot` 下已显式设 `TimeoutStartSec=0`。
 - **通知失败不改变结果**：`sendNotify` 失败只写 warn 日志、不影响退出码；"告警的告警"只能靠 `OnFailure=`。
