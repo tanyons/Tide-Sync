@@ -24,8 +24,6 @@ const (
 	DefaultRetryBackoffSeconds  = 1
 	DefaultMaxSizeMB            = 50
 	DefaultMaxBackups           = 7
-	DefaultLogMaxAgeDays        = 0
-	DefaultLogCompress          = false
 	DefaultDateDirRe            = `^log-\d{4}-\d{2}-\d{2}$`
 	DefaultListPageSize         = 1000
 	DefaultNotifyTimeoutSeconds = 10
@@ -259,6 +257,28 @@ func (c *Config) Validate() error {
 	case "json", "text":
 	default:
 		return fmt.Errorf("logging.format 无效: %q（可选 json|text）", c.Logging.Format)
+	}
+	switch c.Logging.Level {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("logging.level 无效: %q（可选 debug|info|warn|error）", c.Logging.Level)
+	}
+
+	// 通知事件拼错会静默丢失告警，这里必须报错。
+	for _, ch := range []struct {
+		name   string
+		events []string
+	}{
+		{"notify.feishu.events", c.Notify.Feishu.Events},
+		{"notify.dingtalk.events", c.Notify.Dingtalk.Events},
+	} {
+		for _, e := range ch.events {
+			switch e {
+			case "success", "failure", "always":
+			default:
+				return fmt.Errorf("%s 含非法值: %q（可选 success|failure|always）", ch.name, e)
+			}
+		}
 	}
 
 	if _, err := regexp.Compile(c.Defaults.DateDirRegex); err != nil {

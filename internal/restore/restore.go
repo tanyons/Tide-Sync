@@ -33,11 +33,11 @@ func Run(ctx context.Context, b store.Backend, opt Options) (int, error) {
 
 	prefixWithSlash := subtree + "/"
 	count := 0
-	for _, o := range objects {
-		if !strings.HasPrefix(o.Key, prefixWithSlash) {
+	for _, key := range objects {
+		if !strings.HasPrefix(key, prefixWithSlash) {
 			continue
 		}
-		rel := strings.TrimPrefix(o.Key, prefixWithSlash)
+		rel := strings.TrimPrefix(key, prefixWithSlash)
 		if opt.Filter != "" {
 			if ok, _ := doublestar.Match(opt.Filter, rel); !ok {
 				continue
@@ -48,8 +48,8 @@ func Run(ctx context.Context, b store.Backend, opt Options) (int, error) {
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return count, err
 		}
-		if err := b.Get(ctx, o.Key, dest); err != nil {
-			return count, fmt.Errorf("下载 %s 失败: %w", o.Key, err)
+		if err := b.Get(ctx, key, dest); err != nil {
+			return count, fmt.Errorf("下载 %s 失败: %w", key, err)
 		}
 		count++
 	}

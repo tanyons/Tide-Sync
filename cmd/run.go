@@ -34,12 +34,12 @@ func lockPath(cfg *config.Config) string {
 
 // runWithLock 加锁后同步源目录列表，最后统一落盘状态。返回 errFailed 表示有失败。
 func runWithLock(cmd *cobra.Command, app *App, sources []config.Source, dryRun bool) error {
-	lk, err := lock.Acquire(lockPath(app.Cfg))
+	unlock, err := lock.Acquire(lockPath(app.Cfg))
 	if err != nil {
 		app.Log.Error("获取锁失败", "err", err)
 		return err
 	}
-	defer lk.Release()
+	defer unlock()
 
 	return executeSources(ctxOf(cmd), app, sources, dryRun)
 }
@@ -94,12 +94,4 @@ func sendNotify(ctx context.Context, app *App, ev notify.Event) {
 			app.Log.Warn("通知发送失败", "channel", n.Name(), "err", err)
 		}
 	}
-}
-
-// ctxOf 返回命令上下文；cobra 未设置时回退到 Background。
-func ctxOf(cmd *cobra.Command) context.Context {
-	if ctx := cmd.Context(); ctx != nil {
-		return ctx
-	}
-	return context.Background()
 }

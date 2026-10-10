@@ -16,7 +16,8 @@ type ossStore struct {
 	listPageSize int
 }
 
-func newOSS(cfg config.Storage) (Backend, error) {
+// OSSClient 按配置创建 OSS client；internal endpoint 转换在这里统一处理。
+func OSSClient(cfg config.Storage) (*oss.Client, error) {
 	endpoint := cfg.Endpoint
 	if cfg.InternalEndpoint {
 		endpoint = InternalEndpoint(endpoint)
@@ -24,6 +25,14 @@ func newOSS(cfg config.Storage) (Backend, error) {
 	client, err := oss.New(endpoint, cfg.AccessKeyID, cfg.AccessKeySecret)
 	if err != nil {
 		return nil, fmt.Errorf("创建 OSS client 失败: %w", err)
+	}
+	return client, nil
+}
+
+func newOSS(cfg config.Storage) (Backend, error) {
+	client, err := OSSClient(cfg)
+	if err != nil {
+		return nil, err
 	}
 	bucket, err := client.Bucket(cfg.Bucket)
 	if err != nil {
@@ -52,8 +61,8 @@ func (s *ossStore) Get(_ context.Context, key, localPath string) error {
 	return s.bucket.GetObjectToFile(key, localPath)
 }
 
-func (s *ossStore) List(_ context.Context, prefix string) ([]Object, error) {
-	var out []Object
+func (s *ossStore) List(_ context.Context, prefix string) ([]string, error) {
+	var out []string
 	marker := oss.Marker("")
 	for {
 		res, err := s.bucket.ListObjects(oss.Prefix(prefix), oss.MaxKeys(s.listPageSize), marker)
@@ -61,7 +70,7 @@ func (s *ossStore) List(_ context.Context, prefix string) ([]Object, error) {
 			return nil, err
 		}
 		for _, o := range res.Objects {
-			out = append(out, Object{Key: o.Key, Size: o.Size})
+			out = append(out, o.Key)
 		}
 		if !res.IsTruncated {
 			break

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -13,7 +14,8 @@ func newLifecycleCmd() *cobra.Command {
 		Use:   "lifecycle",
 		Short: "生成（默认）或下发（--apply）OSS 生命周期规则",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			app, err := setup(cmd)
+			// 只需要配置本身，不需要构建存储后端
+			cfg, _, err := loadConfig(cmd)
 			if err != nil {
 				return err
 			}
@@ -23,21 +25,20 @@ func newLifecycleCmd() *cobra.Command {
 
 			// 0 表示未指定，取配置里的值。
 			if days <= 0 {
-				days = app.Cfg.Lifecycle.ExpireDays
+				days = cfg.Lifecycle.ExpireDays
 			}
 			if abortDays <= 0 {
-				abortDays = app.Cfg.Lifecycle.AbortDays
+				abortDays = cfg.Lifecycle.AbortDays
 			}
 
 			if !apply {
-				lifecycle.Print(os.Stdout, app.Cfg, days, abortDays)
+				lifecycle.Print(os.Stdout, cfg, days, abortDays)
 				return nil
 			}
-			if err := lifecycle.Apply(app.Cfg, days, abortDays); err != nil {
+			if err := lifecycle.Apply(cfg, days, abortDays); err != nil {
 				return err
 			}
-			app.Log.Info("生命周期规则已下发",
-				"id", lifecycle.RuleID(days), "expire_days", days, "abort_days", abortDays)
+			fmt.Printf("已下发 %s（保留 %d 天，分片 %d 天中止）\n", lifecycle.RuleID(days), days, abortDays)
 			return nil
 		},
 	}

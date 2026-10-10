@@ -35,13 +35,10 @@ type Notifier interface {
 	Send(ctx context.Context, ev Event) error
 }
 
-// New 按配置构建启用的通知渠道（超时取配置的 notify.timeout_seconds）。
+// New 按配置构建启用的通知渠道。
+// 前提：cfg 已经过 config.Load（timeout_seconds 等默认值已落好）。
 func New(cfg config.Notify, host string) []Notifier {
-	timeout := cfg.TimeoutSeconds
-	if timeout <= 0 {
-		timeout = config.DefaultNotifyTimeoutSeconds
-	}
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
+	client := &http.Client{Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second}
 
 	var out []Notifier
 	if cfg.Feishu.Enabled && cfg.Feishu.Webhook != "" {

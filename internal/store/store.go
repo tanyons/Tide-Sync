@@ -9,17 +9,11 @@ import (
 	"Tide-Sync/internal/config"
 )
 
-// Object 是 List 返回的桶内对象。
-type Object struct {
-	Key  string
-	Size int64
-}
-
 // Backend 是存储后端的抽象。
 type Backend interface {
 	Put(ctx context.Context, key, localPath string) error
 	Get(ctx context.Context, key, localPath string) error
-	List(ctx context.Context, prefix string) ([]Object, error)
+	List(ctx context.Context, prefix string) ([]string, error)
 }
 
 // New 按配置显式选择后端；未知类型直接报错，不做隐式兜底。
@@ -30,6 +24,6 @@ func New(cfg config.Storage) (Backend, error) {
 	case "local":
 		return newLocal(cfg)
 	default:
-		return nil, fmt.Errorf("未知的 storage.type: %q", cfg.Type)
+		return nil, fmt.Errorf("storage.type 无效: %q（可选 oss|local）", cfg.Type)
 	}
 }

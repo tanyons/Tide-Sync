@@ -42,13 +42,9 @@ func Print(w io.Writer, cfg *config.Config, days, abortDays int) {
 
 // Apply 通过 SDK 下发规则。先读取桶上已有规则、替换同名规则后整体写回，避免清掉其它规则。
 func Apply(cfg *config.Config, days, abortDays int) error {
-	endpoint := cfg.Storage.Endpoint
-	if cfg.Storage.InternalEndpoint {
-		endpoint = store.InternalEndpoint(endpoint)
-	}
-	client, err := oss.New(endpoint, cfg.Storage.AccessKeyID, cfg.Storage.AccessKeySecret)
+	client, err := store.OSSClient(cfg.Storage)
 	if err != nil {
-		return fmt.Errorf("创建 OSS client 失败: %w", err)
+		return err
 	}
 
 	ourID := RuleID(days)

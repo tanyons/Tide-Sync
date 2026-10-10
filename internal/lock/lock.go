@@ -9,13 +9,8 @@ import (
 	"github.com/gofrs/flock"
 )
 
-// Lock 是一个已持有的文件锁。
-type Lock struct {
-	fl *flock.Flock
-}
-
-// Acquire 尝试获取排他锁；已被占用则返回错误。
-func Acquire(path string) (*Lock, error) {
+// Acquire 获取排他锁并返回释放函数；已被占用则返回错误。
+func Acquire(path string) (func(), error) {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("创建锁目录失败: %w", err)
@@ -29,12 +24,5 @@ func Acquire(path string) (*Lock, error) {
 	if !ok {
 		return nil, fmt.Errorf("已有实例在运行（锁: %s）", path)
 	}
-	return &Lock{fl: fl}, nil
-}
-
-// Release 释放锁。
-func (l *Lock) Release() {
-	if l != nil && l.fl != nil {
-		_ = l.fl.Unlock()
-	}
+	return func() { _ = fl.Unlock() }, nil
 }

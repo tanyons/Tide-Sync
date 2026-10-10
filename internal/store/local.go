@@ -59,12 +59,12 @@ func (s *localStore) Get(_ context.Context, key, localPath string) error {
 	return copyFile(src, localPath)
 }
 
-func (s *localStore) List(_ context.Context, prefix string) ([]Object, error) {
+func (s *localStore) List(_ context.Context, prefix string) ([]string, error) {
 	base, err := s.resolve(prefix)
 	if err != nil {
 		return nil, err
 	}
-	var out []Object
+	var out []string
 	err = filepath.WalkDir(base, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -75,21 +75,14 @@ func (s *localStore) List(_ context.Context, prefix string) ([]Object, error) {
 		if d.IsDir() {
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
 		rel, err := filepath.Rel(s.root, p)
 		if err != nil {
 			return err
 		}
-		out = append(out, Object{Key: filepath.ToSlash(rel), Size: info.Size()})
+		out = append(out, filepath.ToSlash(rel))
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
+	return out, err
 }
 
 func copyFile(src, dst string) error {

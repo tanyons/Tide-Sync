@@ -56,6 +56,7 @@ internal/
    | 状态读写 | `backup.LoadState` / `State.Save` |
    | 生命周期 XML/下发 | `internal/lifecycle` |
    | 内网 endpoint 转换 | `store.InternalEndpoint` |
+   | OSS client 创建 | `store.OSSClient` |
    | `.env` 解析 | `config.LoadDotEnv` |
    | `${ENV}` 展开 | `config.expandEnv` |
    | 配置路径发现 | `cmd.resolveConfigPath` |

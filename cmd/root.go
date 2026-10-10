@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -24,12 +25,11 @@ var errFailed = errors.New("有任务失败")
 
 // App 汇总已装配好的依赖，显式传给各子命令。
 type App struct {
-	ConfigPath string
-	Cfg        *config.Config
-	Log        *slog.Logger
-	Store      store.Backend
-	Notifiers  []notify.Notifier
-	Host       string
+	Cfg       *config.Config
+	Log       *slog.Logger
+	Store     store.Backend
+	Notifiers []notify.Notifier
+	Host      string
 }
 
 // Execute 构建命令树并运行。
@@ -75,7 +75,6 @@ func resolveConfigPath(cmd *cobra.Command) (string, error) {
 }
 
 // loadConfig 是所有命令读配置的唯一入口：先加载 .env，再读配置。
-// 返回配置与它最终使用的路径（供日志与状态路径使用）。
 func loadConfig(cmd *cobra.Command) (*config.Config, string, error) {
 	cfgPath, err := resolveConfigPath(cmd)
 	if err != nil {
@@ -101,7 +100,7 @@ func loadConfig(cmd *cobra.Command) (*config.Config, string, error) {
 func setup(cmd *cobra.Command) (*App, error) {
 	verbose, _ := cmd.Flags().GetBool("verbose")
 
-	cfg, cfgPath, err := loadConfig(cmd)
+	cfg, _, err := loadConfig(cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -120,11 +119,18 @@ func setup(cmd *cobra.Command) (*App, error) {
 	}
 
 	return &App{
-		ConfigPath: cfgPath,
-		Cfg:        cfg,
-		Log:        log,
-		Store:      st,
-		Notifiers:  notify.New(cfg.Notify, host),
-		Host:       host,
+		Cfg:       cfg,
+		Log:       log,
+		Store:     st,
+		Notifiers: notify.New(cfg.Notify, host),
+		Host:      host,
 	}, nil
+}
+
+// ctxOf 返回命令上下文；cobra 未设置时回退到 Background。
+func ctxOf(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }
