@@ -18,18 +18,23 @@ Tide-Sync 每天把它们增量搬到 OSS，保留 30 天。
 
 ## 目录布局
 
-**你只需要放 3 样东西**：可执行文件、`config.toml`、机密的 `.env`。
-其余运行期文件（`logs/`、`state.json`、`state.lock`、local 后端镜像目录）**由程序在运行时自动创建**。
+**仓库根就是部署目录 `/opt/tide-sync/`**：源码、示例配置、systemd 单元都在其中。
+运行期文件（`tide`、`config.toml`、`.env`、`logs/`、`state.json`、`state.lock`）也落在同一目录下，
+其中 **`logs/`、`state.json`、`state.lock`、镜像目录由程序运行时自动创建**。
 
 ```
-/opt/tide-sync/
-├── tide                 # ① 可执行文件（你放）
-├── config.toml          # ② 配置（你放）
-├── .env                 # ③ 敏感信息 KEY=VALUE（你放；已被 .gitignore 忽略）
-├── logs/                # 自动创建
-│   └── tide-sync.log    #   日志（按大小滚动）
-├── state.json           # 自动创建：状态账本（已上传文件的 size/mtime）
-└── state.lock           # 自动创建：运行锁
+/opt/tide-sync/          # = git 仓库根
+├── main.go cmd/ internal/ go.mod ...   # 源码（clone 自带）
+├── config.example.toml   # 示例配置（clone 自带）
+├── .env.example          # 机密模板（clone 自带）
+├── deploy/               # systemd 单元（clone 自带）
+├── tide                  # ← 编译产物（.gitignore 已忽略）
+├── config.toml           # ← 你从示例复制后填写
+├── .env                  # ← 你从模板复制后填写（.gitignore 已忽略）
+├── logs/                 # 自动创建
+│   └── tide-sync.log
+├── state.json            # 自动创建：状态账本（已上传文件的 size/mtime）
+└── state.lock            # 自动创建：运行锁
 ```
 
 桶内布局：
@@ -48,32 +53,64 @@ Tide-Sync 每天把它们增量搬到 OSS，保留 30 天。
   - 已存在的真实环境变量优先，`.env` 不会覆盖它们。
   - `.env` 已被 `.gitignore` 忽略，请勿提交。
 
-## 编译
+## 安装（方式 A：直接在服务器 clone，推荐）
+
+服务器需有 `git` 与 Go 工具链（版本见 `go.mod`）。
 
 ```bash
-go build -o tide .
-```
+# 1) clone 到部署目录：仓库根即 /opt/tide-sync/
+sudo git clone https://github.com/tanyons/Tide-Sync.git /opt/tide-sync
+cd /opt/tide-sync
 
-## 安装
+# 2) 编译（产物路径与默认配置一致）
+sudo go build -o /opt/tide-sync/tide .
 
-```bash
-# 1) 建目录（只放你要提供的文件；其余子目录程序会自建），并安装可执行文件
-sudo mkdir -p /opt/tide-sync
-sudo go build -o /opt/tide-sync/tide .        # 也可：go build -o tide . && sudo cp tide /opt/tide-sync/
+# 3) 生成配置与机密（示例文件已在仓库里）
+sudo cp config.example.toml config.toml
+sudo cp .env.example .env
+sudo chmod 600 .env
+sudo vi config.toml .env      # 填写 bucket、AK/SK、webhook 等
 
-# 2) 放配置与机密（这两个必须由你提供，程序无法替你生成）
-sudo cp config.example.toml /opt/tide-sync/config.toml
-sudo cp .env.example /opt/tide-sync/.env
-sudo chmod 600 /opt/tide-sync/.env            # 然后编辑这两个文件
-
-# 3) 安装 systemd 单元
+# 4) 安装 systemd 单元
 sudo cp deploy/tide-sync.service deploy/tide-sync.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tide-sync.timer
 ```
 
-> 说明：`/opt/tide-sync/` 这个目录本身需要存在（因为要往里放 `config.toml` 和 `.env`）；
-> 而其下的 `logs/`、`state.json`、`state.lock` 都会在首次运行时自动创建，**无需手工建，也无需 `cd` 到该目录**。
+升级：
+
+```bash
+cd /opt/tide-sync && sudo git pull && sudo go build -o /opt/tide-sync/tide .
+```
+
+> 私有仓库需先配置凭据（PAT 或 SSH key）。仓库公开时上面的命令可直接使用。
+
+## 安装（方式 B：离线 / 服务器无 Go 环境）
+
+在**构建机**上编译，再把二进制与示例文件拷到服务器。
+
+```bash
+# —— 构建机 ——
+git clone https://github.com/tanyons/Tide-Sync.git && cd Tide-Sync
+go build -o tide .
+scp -r tide config.example.toml .env.example deploy server:/tmp/tide-sync/
+```
+
+```bash
+# —— 服务器 ——
+sudo mkdir -p /opt/tide-sync && cd /opt/tide-sync
+sudo mv /tmp/tide-sync/tide .
+sudo cp /tmp/tide-sync/config.example.toml config.toml
+sudo cp /tmp/tide-sync/.env.example .env
+sudo chmod 600 .env
+sudo vi config.toml .env
+
+sudo cp /tmp/tide-sync/deploy/tide-sync.service /tmp/tide-sync/deploy/tide-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tide-sync.timer
+```
+
+> 两种方式下，`logs/`、`state.json`、`state.lock` 都会在首次运行时自动创建，**无需手工建**。
 
 ## 命令
 
@@ -132,3 +169,9 @@ ossutil lifecycle --method put oss://your-bucket-name lifecycle.xml
 - **一致性**：源目录里正在被写入的文件，上传后会复检 `size/mtime`；若期间被改写则本轮记为失败，下轮重传。
 - 源目录不存在或不可读时该任务失败，并以非零退出码结束（systemd 标记为 failed，飞书告警）。
 - 用 `storage.type = "local"` 可在完全离线的情况下演练"同步→增量→恢复"。
+
+## 开发
+
+```bash
+go build ./... / go vet ./... / go test ./... / gofmt -l -w .
+```
