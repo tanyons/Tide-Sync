@@ -12,3 +12,8 @@ dist/
 
 # PI-Desktop 工具产物（方案/计划等）
 .pi/
+
+# 运行产物
+/logs
+state.lock
+state.json
