@@ -8,6 +8,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# 备份可能很久：禁用 systemd 默认 90s 超时，否则会被中途杀掉
+TimeoutStartSec=0
 # 工作目录与配置都在安装目录下；相对路径会相对 config.toml 所在目录解析
 WorkingDirectory=__TIDE_DIR__
 # 敏感信息放 <安装目录>/.env；文件不存在也不报错

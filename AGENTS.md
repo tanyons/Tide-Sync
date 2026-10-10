@@ -128,3 +128,7 @@ gofmt -l -w .         # 格式化
 - **`${ENV}` 展开只识别 `${NAME}`**（不处理裸 `$`），避免误伤含 `$` 的密钥；变量缺失直接报错。
 - **目录一律自动创建，文档里不要写手工 `mkdir`**：`state.json`（`State.Save`）、local 镜像目录
   （`store/local.go` 的 Put）、日志目录（lumberjack 内部 `MkdirAll`）、锁目录（`lock.Acquire`）都会自动建。
+- **systemd 默认 `TimeoutStartSec=90s` 会杀掉长备份**：`Type=oneshot` 下必须显式 `TimeoutStartSec=0`
+  （模板已设）。被杀时进程来不及发通知、状态也不落盘，只会被 systemd 标记 failed。
+- **通知失败不改变结果**：`sendNotify` 发送失败只写 warn 日志、不影响退出码；
+  要"告警的告警"只能靠 systemd `OnFailure=`，不要指望它自己。
