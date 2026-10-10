@@ -6,17 +6,17 @@ systemd timer 定时触发，桶内保留 30 天。
 ## 安装
 
 ```bash
-sudo git clone https://github.com/tanyons/Tide-Sync.git /opt/tide-sync && cd /opt/tide-sync
-sudo go build -o tide .
+git clone https://github.com/tanyons/Tide-Sync.git && cd Tide-Sync
+go build -o tide .
 
-sudo cp config.example.toml config.toml
-sudo cp .env.example .env && sudo chmod 600 .env
-sudo vi config.toml .env        # config.toml=要备份什么；.env=OSS 密钥、飞书 webhook
+cp config.example.toml config.toml
+cp .env.example .env && chmod 600 .env
+vi config.toml .env        # config.toml=要备份什么；.env=OSS 密钥、飞书 webhook
 
 sudo bash deploy/install-systemd.sh   # 注册并启用 systemd timer（每天 03:00）
 ```
 
-升级：`git pull && go build -o tide .`（装到任意目录均可，路径自动跟随）
+clone 到哪就装在哪（systemd 单元自动填绝对路径）。升级：`git pull && go build -o tide .`
 
 ## 配置
 
