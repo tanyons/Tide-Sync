@@ -1,0 +1,13 @@
+# 敏感信息（含真实密钥），不要提交
+.env
+
+# 构建产物
+/tide
+/tide.exe
+dist/
+
+# 编辑器/系统
+.DS_Store
+
+# PI-Desktop 工具产物（方案/计划等）
+.pi/

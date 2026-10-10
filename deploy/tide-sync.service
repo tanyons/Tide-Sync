@@ -1,0 +1,10 @@
+[Unit]
+Description=Tide-Sync 增量备份到 OSS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 敏感信息放 /opt/tide-sync/.env（KEY=VALUE）；供配置里的 ${ENV} 展开。文件不存在也不报错。
+EnvironmentFile=-/opt/tide-sync/.env
+ExecStart=/opt/tide-sync/tide run -c /opt/tide-sync/config.toml

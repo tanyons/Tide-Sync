@@ -1,0 +1,4 @@
+# 仓库内统一使用 LF；Windows 上的 .bat 用 CRLF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf

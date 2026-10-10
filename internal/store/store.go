@@ -1,0 +1,35 @@
+// Package store 定义存储后端。全项目仅有的两个接口之一。
+// 以“本地文件路径”为出入参：OSS 走分片上传、本地后端直接拷贝。
+package store
+
+import (
+	"context"
+	"fmt"
+
+	"Tide-Sync/internal/config"
+)
+
+// Object 是 List 返回的桶内对象。
+type Object struct {
+	Key  string
+	Size int64
+}
+
+// Backend 是存储后端的抽象。
+type Backend interface {
+	Put(ctx context.Context, key, localPath string) error
+	Get(ctx context.Context, key, localPath string) error
+	List(ctx context.Context, prefix string) ([]Object, error)
+}
+
+// New 按配置显式选择后端；未知类型直接报错，不做隐式兜底。
+func New(cfg config.Storage) (Backend, error) {
+	switch cfg.Type {
+	case "oss":
+		return newOSS(cfg)
+	case "local":
+		return newLocal(cfg)
+	default:
+		return nil, fmt.Errorf("未知的 storage.type: %q", cfg.Type)
+	}
+}

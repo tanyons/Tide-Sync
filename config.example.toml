@@ -1,0 +1,58 @@
+# Tide-Sync 配置示例
+# 全部内容集中在这一个文件。运行：/opt/tide-sync/tide run -c /opt/tide-sync/config.toml
+# 敏感信息（AK/SK、webhook）放同目录 .env，用 ${ENV} 引用；见 .env.example。
+
+[storage]
+type = "oss"                            # oss | local
+endpoint = "oss-cn-hangzhou.aliyuncs.com"
+bucket = "your-bucket-name"
+access_key_id = "${TIDE_OSS_AK}"        # 支持 ${ENV} 展开；变量未设置会直接报错
+access_key_secret = "${TIDE_OSS_SK}"
+prefix = "tide-sync"                    # 桶内根前缀；生命周期规则以此前缀限定范围
+internal_endpoint = true                # 同区内网 endpoint，省流量费
+list_page_size = 1000                   # 列举对象时的分页大小
+# local_dir = "/opt/tide-sync/mirror"   # type="local" 时使用
+
+[logging]
+level = "info"                                       # debug|info|warn|error
+file = "/opt/tide-sync/logs/tide-sync.log"           # 置空则只输出到 stdout
+format = "json"                                      # json|text
+max_size_mb = 50                                     # 单个日志文件大小上限
+max_backups = 7                                      # 保留的历史日志文件数
+max_age_days = 0                                     # 0=不按天数清理
+compress = false                                     # 是否压缩旧日志
+
+[notify]
+timeout_seconds = 10                    # 单次 webhook 请求超时
+
+[notify.feishu]
+enabled = true
+webhook = "${FEISHU_WEBHOOK}"
+events = ["failure"]             # success|failure|always；缺省只发 failure
+
+# [notify.dingtalk]              # 预留，字段与飞书一致
+# enabled = false
+# webhook = "${DINGTALK_WEBHOOK}"
+# events = ["failure"]
+
+[lifecycle]
+expire_days = 30                        # 对象创建满 N 天删除
+abort_days = 3                          # 未完成分片 N 天后中止
+
+[defaults]
+host = ""                                        # 空=os.Hostname()，可显式覆盖
+state_file = "/opt/tide-sync/state.json"
+exclude = ["**/*.tmp", "**/.DS_Store"]
+follow_symlinks = false
+concurrency = 4
+retry = 3
+retry_backoff_seconds = 1                        # 重试退避基数：第 i 次等待 i*N 秒
+# 跳过“早于今天且已完成”的日期目录以提速；前提是旧日期目录不再变化。
+# 若旧目录可能追加文件，请设为 false。
+skip_completed_datedirs = true
+date_dir_regex = "^log-\\d{4}-\\d{2}-\\d{2}$"
+
+[[jobs]]
+name = "appA"                                    # 桶内路径 <prefix>/<host>/appA/...
+source = "/opt/backup/appA"                      # 本地备份根目录（内含 log-YYYY-MM-DD/）
+# exclude = ["**/*.log"]                         # 追加排除，与 defaults.exclude 叠加
