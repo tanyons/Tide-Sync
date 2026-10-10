@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -16,7 +17,7 @@ import (
 
 // 默认值（集中在一处，避免散落）。凡“可写活”的常量都在此，可被配置文件覆盖。
 const (
-	DefaultStateFile            = "/opt/tide-sync/state.json"
+	DefaultStateFileName        = "state.json"
 	DefaultPrefix               = "tide-sync"
 	DefaultConcurrency          = 4
 	DefaultRetry                = 3
@@ -128,6 +129,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg.applyDefaults()
+	cfg.resolvePaths(path)
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -193,9 +195,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Lifecycle.AbortDays <= 0 {
 		c.Lifecycle.AbortDays = DefaultAbortDays
-	}
-	if c.Defaults.StateFile == "" {
-		c.Defaults.StateFile = DefaultStateFile
 	}
 	if c.Defaults.Concurrency <= 0 {
 		c.Defaults.Concurrency = DefaultConcurrency
@@ -303,4 +302,31 @@ func redact(s string) string {
 		return "****"
 	}
 	return s[:2] + "****" + s[len(s)-2:]
+}
+
+// resolvePaths 把配置里的相对路径解析到“配置文件所在目录”。
+// 这样无论 clone/部署到哪个目录，state/log/local 目录都跟着配置文件走，而不是写死 /opt。
+func (c *Config) resolvePaths(configPath string) {
+	base, err := filepath.Abs(filepath.Dir(configPath))
+	if err != nil {
+		base = filepath.Dir(configPath)
+	}
+	if c.Defaults.StateFile == "" {
+		c.Defaults.StateFile = filepath.Join(base, DefaultStateFileName)
+	} else {
+		c.Defaults.StateFile = absFrom(base, c.Defaults.StateFile)
+	}
+	if c.Logging.File != "" {
+		c.Logging.File = absFrom(base, c.Logging.File)
+	}
+	if c.Storage.LocalDir != "" {
+		c.Storage.LocalDir = absFrom(base, c.Storage.LocalDir)
+	}
+}
+
+func absFrom(base, p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(base, p)
 }

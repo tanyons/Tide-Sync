@@ -1,3 +1,6 @@
+# 模板文件：__TIDE_DIR__ 会被 deploy/install-systemd.sh 替换成实际安装目录。
+# 手动安装也可以：
+#   sed "s#__TIDE_DIR__#/your/install/dir#g" deploy/tide-sync.service > /etc/systemd/system/tide-sync.service
 [Unit]
 Description=Tide-Sync 增量备份到 OSS
 After=network-online.target
@@ -5,6 +8,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# 敏感信息放 /opt/tide-sync/.env（KEY=VALUE）；供配置里的 ${ENV} 展开。文件不存在也不报错。
-EnvironmentFile=-/opt/tide-sync/.env
-ExecStart=/opt/tide-sync/tide run -c /opt/tide-sync/config.toml
+# 工作目录与配置都在安装目录下；相对路径会相对 config.toml 所在目录解析
+WorkingDirectory=__TIDE_DIR__
+# 敏感信息放 <安装目录>/.env；文件不存在也不报错
+EnvironmentFile=-__TIDE_DIR__/.env
+ExecStart=__TIDE_DIR__/tide run -c __TIDE_DIR__/config.toml

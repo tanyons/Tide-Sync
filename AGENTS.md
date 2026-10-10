@@ -6,6 +6,7 @@
 
 Go 编写的单二进制命令行工具：把服务器本地备份目录**增量镜像同步**到对象存储。
 一次性运行（`tide run`），由 systemd timer 触发，跑完退出；桶内保留交给 OSS 生命周期。
+**可安装在任意目录**，不依赖固定路径。
 
 ## 技术栈与依赖
 
@@ -26,7 +27,7 @@ internal/
   restore/                用例：按 host/job/[dir]/[filter] 拉取
   lifecycle/              用例：生成/下发 OSS 生命周期规则
   store/                  构件：Backend 接口 + local.go + oss.go
-  config/                 构件：koanf(TOML) 加载 + .env + ${ENV} 展开 + 校验 + 脱敏
+  config/                 构件：koanf(TOML) 加载 + .env + ${ENV} 展开 + 路径解析 + 校验 + 脱敏
   logx/                   构件：slog 构建
   notify/                 构件：Notifier 接口 + feishu.go + dingtalk
   lock/                   构件：flock 封装
@@ -56,10 +57,11 @@ internal/
    | 内网 endpoint 转换 | `store.InternalEndpoint` |
    | `.env` 解析 | `config.LoadDotEnv` |
    | `${ENV}` 展开 | `config.expandEnv` |
+   | 配置路径发现 | `cmd.resolveConfigPath` |
+   | 相对路径解析（相对配置目录） | `config.resolvePaths` |
 
-3. **显式装配**：`cmd.setup()` 先 `config.LoadDotEnv(<配置目录>/.env)`（可被 `-e/--env` 覆盖），
-   再 `config.Load` → 建 `logger/store/notifier` → 传参给用例。
-   **不用全局变量、不用 `init()`、不用反射、不用 DI 框架。**
+3. **显式装配**：`cmd.loadConfig()` 先 `.env` 再 `config.Load`；`cmd.setup()` 建 `logger/store/notifier`
+   并传参给用例。**不用全局变量、不用 `init()`、不用反射、不用 DI 框架。**
 4. **配置一次解析成强类型**：`config.Load` 返回结构体并 `Validate()`；运行期只读结构体字段。
 5. **错误显式上抛**：底层只 `return err`，**只有 `cmd` 层**打日志、定退出码
    （`errFailed` 用于让 systemd 判定失败）。
@@ -68,6 +70,10 @@ internal/
    （如 `DefaultExpireDays`、`DefaultNotifyTimeoutSeconds`、`DefaultListPageSize`、
    `DefaultRetryBackoffSeconds`），并在 `applyDefaults()` 中落到结构体字段；
    **不要在业务代码里写死数字**，一律从 `cfg` 取。
+8. **不得硬编码安装目录**：代码/文档里不出现 `/opt/tide-sync` 之类的绝对安装路径。
+   - 配置文件位置由 `cmd.resolveConfigPath` 发现（`-c` > `./config.toml` > 可执行文件同目录）。
+   - 配置里的相对路径由 `config.resolvePaths` 解析到**配置文件所在目录**。
+   - systemd 单元用 `deploy/install-systemd.sh` 把 `__TIDE_DIR__` 替换成实际目录。
 
 ## 构建与校验
 
@@ -78,9 +84,10 @@ go test ./...         # 单元测试 + 本地端到端
 gofmt -l -w .         # 格式化
 ```
 
-端到端测试用 `storage.type = "local"` 完全离线跑通「同步→增量→恢复」；
-`internal/backup/backup_test.go` 覆盖增量、排除、日期目录跳过、状态往返；
-`internal/config/*_test.go` 覆盖配置解析、`${ENV}` 展开、`.env` 解析。
+- `internal/backup/backup_test.go`：增量、排除、日期目录跳过、状态往返。
+- `internal/config/*_test.go`：配置解析、`${ENV}` 展开、`.env` 解析、**相对/绝对路径解析**。
+- `cmd/root_test.go`：配置路径发现（`-c` / 当前目录 / 找不到时报错）。
+- `internal/lock/lock_test.go`：锁目录自动创建。
 
 ## 核心不变量（改动时勿破坏）
 
@@ -89,7 +96,8 @@ gofmt -l -w .         # 格式化
 - **不删除**：工具从不删除桶内对象；保留由 OSS 生命周期负责。
 - **一次运行**：`tide run` 跑完全部任务后退出，**无内置调度**、不判断到期。
 - **状态只在成功后落盘**：`State.Save` 原子写（tmp + rename），仅在任务循环结束后调用一次。
-- **敏感信息只从环境来**：配置里只写 `${ENV}`；`.env` 或缺省环境优先级低于真实环境变量。
+- **敏感信息只从环境来**：配置里只写 `${ENV}`；`.env` 优先级低于真实环境变量。
+- **与安装位置无关**：任何路径都从「配置文件位置」派生，不得依赖 CWD 之外写死的位置。
 
 ## 如何扩展
 
@@ -106,6 +114,8 @@ gofmt -l -w .         # 格式化
 
 - **`.env` 由工具写入会被工作区安全策略拒绝**：不要用工具生成 `.env`（含密文件），
   用 `.env.example` + 复制。程序读取 `.env` 是正常的。
+- **`filepath.IsAbs` 在 Windows 上把 `/tmp/x` 判为相对**：跨平台测试要用平台绝对路径
+  （`filepath.Join(t.TempDir(), ...)`），别写死 `/tmp/...`。生产目标是 Linux。
 - **`skip_completed_datedirs` 代码默认 `false`**（安全全扫），但**示例配置设为 `true`**。
   原因：bool 默认值无法区分「未设置」与「显式 false」，故代码默认保守、由配置显式开启。
 - **`restore --dir` 匹配顶层目录名**（如 `log-2024-06-11`），不是纯日期 `2024-06-11`——
@@ -118,4 +128,3 @@ gofmt -l -w .         # 格式化
 - **`${ENV}` 展开只识别 `${NAME}`**（不处理裸 `$`），避免误伤含 `$` 的密钥；变量缺失直接报错。
 - **目录一律自动创建，文档里不要写手工 `mkdir`**：`state.json`（`State.Save`）、local 镜像目录
   （`store/local.go` 的 Put）、日志目录（lumberjack 内部 `MkdirAll`）、锁目录（`lock.Acquire`）都会自动建。
-  唯一必须由管理员提供的是 `/opt/tide-sync/` 目录本身（因为要放 `config.toml` 与 `.env`）。

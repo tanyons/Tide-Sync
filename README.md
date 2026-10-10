@@ -5,7 +5,7 @@
 
 典型用法：本地脚本每天在 `/opt/backup/某软件/` 下生成 `log-YYYY-MM-DD/` 目录，Tide-Sync 把它们增量搬到 OSS。
 
-> 开发者与架构说明见 [AGENTS.md](AGENTS.md)。
+> **可装在任意目录**（下面以 `/opt/tide-sync` 为例）：程序自己找配置，配置里的相对路径都相对配置文件解析。
 
 ## 安装
 
@@ -20,12 +20,16 @@ sudo cp config.example.toml config.toml          # 填：bucket、prefix、要�
 sudo cp .env.example .env && sudo chmod 600 .env # 填：OSS AK/SK、飞书 webhook
 sudo vi config.toml .env
 
-sudo cp deploy/tide-sync.service deploy/tide-sync.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now tide-sync.timer
+sudo bash deploy/install-systemd.sh              # 生成并启用 systemd timer（自动填入安装目录）
 ```
 
-升级：`cd /opt/tide-sync && sudo git pull && sudo go build -o tide .`
+关于路径：
+
+- 程序在**当前目录**或**可执行文件同目录**查找 `config.toml`；也可用 `-c` 指定。
+- 配置里的**相对路径**（`state_file`、`logging.file`、`storage.local_dir`）都相对 `config.toml` 所在目录解析，
+  所以装到哪都能用；`logs/`、`state.json`、`state.lock` 等运行期文件会自动创建。
+
+升级：`cd <安装目录> && sudo git pull && sudo go build -o tide .`
 
 ## 使用
 
