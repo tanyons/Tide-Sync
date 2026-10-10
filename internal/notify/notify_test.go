@@ -66,7 +66,11 @@ func TestFeishuSendsInteractiveCard(t *testing.T) {
 	}
 	blob, _ := json.Marshal(card)
 	if !strings.Contains(string(blob), "web-01") || !strings.Contains(string(blob), "appA") {
-		t.Fatalf("卡片应包含主机与任务: %s", blob)
+		t.Fatalf("卡片应包含主机与目录: %s", blob)
+	}
+	// 目录单独占一行（完整绝对路径）
+	if !strings.Contains(string(blob), "**目录**\\n/opt/backup/appA") {
+		t.Fatalf("目录应为独立行: %s", blob)
 	}
 }
 

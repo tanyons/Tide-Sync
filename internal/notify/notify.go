@@ -134,12 +134,16 @@ func feishuCard(ev Event) map[string]any {
 		icon, title, color = "❌", "备份失败", "red"
 	}
 
+	// 目录是完整绝对路径，通常较长：单独占一行；其余指标两列排布。
 	elements := []any{
+		map[string]any{
+			"tag":  "div",
+			"text": map[string]any{"tag": "lark_md", "content": "**目录**\n" + ev.Source},
+		},
 		map[string]any{
 			"tag": "div",
 			"fields": []any{
 				cardField("主机", ev.Host),
-				cardField("目录", ev.Source),
 				cardField("耗时", humanDuration(ev.EndedAt.Sub(ev.StartedAt))),
 				cardField("上传", fmt.Sprintf("%d 个 · %s", ev.Uploaded, humanBytes(ev.Bytes))),
 				cardField("扫描", fmt.Sprintf("%d", ev.Scanned)),
