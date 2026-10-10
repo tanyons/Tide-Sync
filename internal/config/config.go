@@ -105,7 +105,8 @@ type Source struct {
 	Exclude []string `koanf:"exclude"` // 追加，叠加 Defaults.Exclude
 }
 
-// Load 读取配置文件：读盘 -> 展开 ${ENV} -> koanf(TOML) -> 补默认值 -> 校验。
+// Load 读取配置文件：读盘 -> 剥离注释并展开 ${ENV} -> koanf(TOML) -> 补默认值 -> 校验。
+// 注意：展开前会先剔除 TOML 注释，注释里出现的 ${...}（说明文字或注释掉的配置）不会被当作取值。
 func Load(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -137,7 +138,11 @@ func Load(path string) (*Config, error) {
 // envRe 只识别 ${NAME} 形式，不碰单独的 $（避免误伤含 $ 的密钥/口令）。
 var envRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
+// expandEnv 把配置文本里的 ${NAME} 替换为环境变量值；变量缺失时报错。
+// 替换前先剔除 TOML 注释：注释不是配置取值，其中出现的 ${...} 不应触发缺失报错
+// （否则像“# 支持 ${ENV} 展开”这类说明文字、或被注释掉的配置项都会让程序直接失败）。
 func expandEnv(data []byte) ([]byte, error) {
+	data = stripTOMLComments(data)
 	var missing []string
 	out := envRe.ReplaceAllFunc(data, func(m []byte) []byte {
 		name := string(envRe.FindSubmatch(m)[1])
@@ -152,6 +157,90 @@ func expandEnv(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("环境变量未设置: %s", strings.Join(dedupe(missing), ", "))
 	}
 	return out, nil
+}
+
+// stripTOMLComments 删除 TOML 注释（未加引号的 '#' 到行尾），保留换行。
+// 字符串内的 '#' 不受影响；支持 "..."、'...' 及三引号多行字符串。
+// 行尾的注释被删除后，行首/行尾可能留下空白，对 TOML 解析无影响。
+func stripTOMLComments(data []byte) []byte {
+	const (
+		plain     = iota // 不在字符串里
+		basic            // "..."
+		literal          // '...'
+		basicML          // """..."""
+		literalML        // '''...'''
+	)
+	out := make([]byte, 0, len(data))
+	state := plain
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		switch state {
+		case plain:
+			switch {
+			case c == '#':
+				// 跳到行尾；换行本身保留（作为 TOML 行分隔）。
+				for i < len(data) && data[i] != '\n' {
+					i++
+				}
+				if i < len(data) {
+					out = append(out, '\n')
+				}
+			case c == '"' && i+2 < len(data) && data[i+1] == '"' && data[i+2] == '"':
+				state = basicML
+				out = append(out, data[i], data[i+1], data[i+2])
+				i += 2
+			case c == '\'' && i+2 < len(data) && data[i+1] == '\'' && data[i+2] == '\'':
+				state = literalML
+				out = append(out, data[i], data[i+1], data[i+2])
+				i += 2
+			case c == '"':
+				state = basic
+				out = append(out, c)
+			case c == '\'':
+				state = literal
+				out = append(out, c)
+			default:
+				out = append(out, c)
+			}
+		case basic:
+			if c == '\\' && i+1 < len(data) {
+				out = append(out, c, data[i+1])
+				i++
+				continue
+			}
+			if c == '"' {
+				state = plain
+			}
+			out = append(out, c)
+		case literal:
+			if c == '\'' {
+				state = plain
+			}
+			out = append(out, c)
+		case basicML:
+			if c == '\\' && i+1 < len(data) {
+				out = append(out, c, data[i+1])
+				i++
+				continue
+			}
+			if c == '"' && i+2 < len(data) && data[i+1] == '"' && data[i+2] == '"' {
+				state = plain
+				out = append(out, data[i], data[i+1], data[i+2])
+				i += 2
+				continue
+			}
+			out = append(out, c)
+		case literalML:
+			if c == '\'' && i+2 < len(data) && data[i+1] == '\'' && data[i+2] == '\'' {
+				state = plain
+				out = append(out, data[i], data[i+1], data[i+2])
+				i += 2
+				continue
+			}
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func dedupe(in []string) []string {

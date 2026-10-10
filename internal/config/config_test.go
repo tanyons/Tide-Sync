@@ -173,6 +173,58 @@ func TestLoadMissingEnvFails(t *testing.T) {
 	}
 }
 
+// 注释里的 ${...} 不是配置取值：不应触发“环境变量未设置”报错。
+// 覆盖两种情形：整行说明文字、以及被注释掉的配置项。
+func TestCommentsDoNotRequireEnv(t *testing.T) {
+	base := t.TempDir()
+	cfgText := fmt.Sprintf(`
+[storage]
+type = "local"
+local_dir = "mirror"     # 说明里的 ${NO_SUCH_VAR} 应被忽略
+prefix = "tide-sync"
+
+[logging]
+format = "json"
+
+# [notify.dingtalk]
+# webhook = "${DINGTALK_WEBHOOK_XYZ}"
+
+[[sources]]
+path = %q
+`, filepath.ToSlash(filepath.Join(base, "backup")))
+	if _, err := Load(writeTemp(t, cfgText)); err != nil {
+		t.Fatalf("注释中的 ${...} 不应报错: %v", err)
+	}
+}
+
+// 剥离注释只影响注释：取值里的 ${NAME} 照常展开，字符串内部的 '#' 也不是注释。
+func TestExpandEnvKeepsValueAndStringHash(t *testing.T) {
+	t.Setenv("MY_DIR", filepath.ToSlash(filepath.Join(t.TempDir(), "x")))
+	base := t.TempDir()
+	cfgText := fmt.Sprintf(`
+[storage]
+type = "local"
+local_dir = "${MY_DIR}"   # 注释里的 ${NO_SUCH_VAR} 应被忽略
+prefix = "a#b"
+
+[logging]
+format = "json"
+
+[[sources]]
+path = %q
+`, filepath.ToSlash(filepath.Join(base, "backup")))
+	cfg, err := Load(writeTemp(t, cfgText))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !strings.HasSuffix(cfg.Storage.LocalDir, "x") {
+		t.Fatalf("local_dir 未展开: %q", cfg.Storage.LocalDir)
+	}
+	if cfg.Storage.Prefix != "a#b" {
+		t.Fatalf("prefix = %q，字符串内的 # 不应被当作注释", cfg.Storage.Prefix)
+	}
+}
+
 func TestValidateBadStorageType(t *testing.T) {
 	cfgText := strings.Replace(cfgWithSources(filepath.Join(t.TempDir(), "backup")),
 		`type = "local"`, `type = "ftp"`, 1)
