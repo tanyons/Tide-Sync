@@ -18,17 +18,18 @@ Tide-Sync 每天把它们增量搬到 OSS，保留 30 天。
 
 ## 目录布局
 
-程序与配置集中在**一个目录**：
+**你只需要放 3 样东西**：可执行文件、`config.toml`、机密的 `.env`。
+其余运行期文件（`logs/`、`state.json`、`state.lock`、local 后端镜像目录）**由程序在运行时自动创建**。
 
 ```
 /opt/tide-sync/
-├── tide                 # 可执行文件
-├── config.toml          # 配置
-├── .env                 # 敏感信息 KEY=VALUE（AK/SK、webhook）；已被 .gitignore
-├── state.json           # 状态账本（记录已上传文件的 size/mtime）
-├── state.lock           # 运行锁
-└── logs/
-    └── tide-sync.log    # 日志（按大小滚动）
+├── tide                 # ① 可执行文件（你放）
+├── config.toml          # ② 配置（你放）
+├── .env                 # ③ 敏感信息 KEY=VALUE（你放；已被 .gitignore 忽略）
+├── logs/                # 自动创建
+│   └── tide-sync.log    #   日志（按大小滚动）
+├── state.json           # 自动创建：状态账本（已上传文件的 size/mtime）
+└── state.lock           # 自动创建：运行锁
 ```
 
 桶内布局：
@@ -56,17 +57,23 @@ go build -o tide .
 ## 安装
 
 ```bash
-sudo mkdir -p /opt/tide-sync/logs
-sudo cp tide /opt/tide-sync/
+# 1) 建目录（只放你要提供的文件；其余子目录程序会自建），并安装可执行文件
+sudo mkdir -p /opt/tide-sync
+sudo go build -o /opt/tide-sync/tide .        # 也可：go build -o tide . && sudo cp tide /opt/tide-sync/
+
+# 2) 放配置与机密（这两个必须由你提供，程序无法替你生成）
 sudo cp config.example.toml /opt/tide-sync/config.toml
 sudo cp .env.example /opt/tide-sync/.env
-# 编辑 config.toml 与 /opt/tide-sync/.env（填入 AK/SK、webhook 等）
-sudo chmod 600 /opt/tide-sync/.env
+sudo chmod 600 /opt/tide-sync/.env            # 然后编辑这两个文件
 
+# 3) 安装 systemd 单元
 sudo cp deploy/tide-sync.service deploy/tide-sync.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tide-sync.timer
 ```
+
+> 说明：`/opt/tide-sync/` 这个目录本身需要存在（因为要往里放 `config.toml` 和 `.env`）；
+> 而其下的 `logs/`、`state.json`、`state.lock` 都会在首次运行时自动创建，**无需手工建，也无需 `cd` 到该目录**。
 
 ## 命令
 

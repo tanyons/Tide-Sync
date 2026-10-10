@@ -116,3 +116,6 @@ gofmt -l -w .         # 格式化
 - **路径归一化**：源扫描内部统一用 `/` 分隔的 rel 路径（`filepath.ToSlash`）；
   对象 key 用 `path.Join`；本地/OS 路径用 `filepath`。开发在 Windows、生产在 Linux，注意别混用。
 - **`${ENV}` 展开只识别 `${NAME}`**（不处理裸 `$`），避免误伤含 `$` 的密钥；变量缺失直接报错。
+- **目录一律自动创建，文档里不要写手工 `mkdir`**：`state.json`（`State.Save`）、local 镜像目录
+  （`store/local.go` 的 Put）、日志目录（lumberjack 内部 `MkdirAll`）、锁目录（`lock.Acquire`）都会自动建。
+  唯一必须由管理员提供的是 `/opt/tide-sync/` 目录本身（因为要放 `config.toml` 与 `.env`）。
