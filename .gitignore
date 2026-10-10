@@ -1,5 +1,6 @@
 # 敏感信息（含真实密钥），不要提交
 .env
+config.toml
 
 # 构建产物
 /tide
